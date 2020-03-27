@@ -2,6 +2,8 @@ const utils = require('../utils')
 
 const openingGroupCharacter = '('
 const closingGroupCharacter = ')'
+const openingAttributeGroupCharacter = '{'
+const closingAttributeGroupCharacter = '}'
 
 /**
  * Determine whether a HED string is a group (surrounded by parentheses).
@@ -12,6 +14,52 @@ const hedStringIsAGroup = function(hedString) {
     trimmedHedString.startsWith(openingGroupCharacter) &&
     trimmedHedString.endsWith(closingGroupCharacter)
   )
+}
+
+/**
+ * Determine whether a HED string contains an attribute group (with curly brackets).
+ */
+const hedStringIsAnAttributeGroup = function(hedString, fullHedString, issues) {
+  const trimmedHedString = hedString.trim()
+  if (trimmedHedString.includes(openingAttributeGroupCharacter)) {
+    if (!trimmedHedString.includes(closingAttributeGroupCharacter)) {
+      issues.push(
+        utils.generateIssue('invalidCharacter', {
+          character: openingAttributeGroupCharacter,
+          index: fullHedString.indexOf(openingAttributeGroupCharacter),
+          string: fullHedString,
+        }),
+      )
+      return false
+    } else if (
+      trimmedHedString.indexOf(openingAttributeGroupCharacter) >
+      trimmedHedString.indexOf(closingAttributeGroupCharacter)
+    ) {
+      issues.push(
+        utils.generateIssue('invalidCharacter', {
+          character: openingAttributeGroupCharacter,
+          index: fullHedString.indexOf(openingAttributeGroupCharacter),
+          string: fullHedString,
+        }),
+        utils.generateIssue('invalidCharacter', {
+          character: closingAttributeGroupCharacter,
+          index: fullHedString.indexOf(closingAttributeGroupCharacter),
+          string: fullHedString,
+        }),
+      )
+      return false
+    }
+    return true
+  } else if (trimmedHedString.includes(closingAttributeGroupCharacter)) {
+    issues.push(
+      utils.generateIssue('invalidCharacter', {
+        character: closingAttributeGroupCharacter,
+        index: fullHedString.indexOf(closingAttributeGroupCharacter),
+        string: fullHedString,
+      }),
+    )
+  }
+  return false
 }
 
 /**
@@ -32,11 +80,11 @@ const splitHedString = function(hedString, issues) {
   const delimiter = ','
   const doubleQuoteCharacter = '"'
   const tilde = '~'
-  const invalidCharacters = ['{', '}', '[', ']']
+  const invalidCharacters = ['[', ']']
 
   const hedTags = []
-  let numberOfOpeningParentheses = 0
-  let numberOfClosingParentheses = 0
+  let numberOfOpenedGroups = 0
+  let numberOfClosedGroups = 0
   let currentTag = ''
   // Loop a character at a time.
   for (let i = 0; i < hedString.length; i++) {
@@ -44,16 +92,19 @@ const splitHedString = function(hedString, issues) {
     if (character === doubleQuoteCharacter) {
       // Skip double quotes
       continue
-    } else if (character === openingGroupCharacter) {
-      // Count group characters
-      numberOfOpeningParentheses++
-    } else if (character === closingGroupCharacter) {
-      numberOfClosingParentheses++
-    }
-    if (
-      numberOfOpeningParentheses === numberOfClosingParentheses &&
-      character === tilde
+    } else if (
+      character === openingGroupCharacter ||
+      character === openingAttributeGroupCharacter
     ) {
+      // Count group characters
+      numberOfOpenedGroups++
+    } else if (
+      character === closingGroupCharacter ||
+      character === closingAttributeGroupCharacter
+    ) {
+      numberOfClosedGroups++
+    }
+    if (numberOfOpenedGroups === numberOfClosedGroups && character === tilde) {
       // Found a tilde, so push the current tag and a tilde.
       if (!utils.string.stringIsEmpty(currentTag)) {
         hedTags.push(currentTag.trim())
@@ -61,7 +112,7 @@ const splitHedString = function(hedString, issues) {
       hedTags.push(tilde)
       currentTag = ''
     } else if (
-      numberOfOpeningParentheses === numberOfClosingParentheses &&
+      numberOfOpenedGroups === numberOfClosedGroups &&
       character === delimiter
     ) {
       // Found the end of a tag, so push the current tag.
@@ -97,18 +148,36 @@ const splitHedString = function(hedString, issues) {
  * Find and parse the group tags in a provided list.
  *
  * @param groupTagsList The list of possible group tags.
+ * @param hedString The full HED string.
  * @param parsedString The object to store parsed output in.
  * @param issues The array of issues.
  */
-const findTagGroups = function(groupTagsList, parsedString, issues) {
+const findTagGroups = function(groupTagsList, hedString, parsedString, issues) {
   for (const tagOrGroup of groupTagsList) {
     if (hedStringIsAGroup(tagOrGroup)) {
       const tagGroupString = removeGroupParentheses(tagOrGroup)
       // Split the group tag and recurse.
       const nestedGroupTagList = splitHedString(tagGroupString, issues)
-      findTagGroups(nestedGroupTagList, parsedString, issues)
+      findTagGroups(nestedGroupTagList, hedString, parsedString, issues)
       parsedString.tagGroupStrings.push(tagOrGroup)
       parsedString.tagGroups.push(nestedGroupTagList)
+    } else if (hedStringIsAnAttributeGroup(tagOrGroup, hedString, issues)) {
+      let [primaryTag, attributeTagString] = tagOrGroup.split(
+        openingAttributeGroupCharacter,
+      )
+      primaryTag = primaryTag.trim()
+      attributeTagString = attributeTagString.slice(0, -1).trim()
+      const attributeTagList = splitHedString(attributeTagString, issues)
+      const tagGroupList = attributeTagList.map(tag => {
+        if (tag.startsWith('/')) {
+          return 'Attribute' + tag
+        } else {
+          return 'Attribute/' + tag
+        }
+      })
+      tagGroupList.unshift(primaryTag)
+      parsedString.tagGroupStrings.push(tagOrGroup)
+      parsedString.tagGroups.push(tagGroupList)
     } else if (!parsedString.tags.includes(tagOrGroup)) {
       parsedString.tags.push(tagOrGroup)
     }
@@ -204,7 +273,7 @@ const parseHedString = function(hedString, issues) {
   }
   const hedTagList = splitHedString(hedString, issues)
   parsedString.topLevelTags = findTopLevelTags(hedTagList, parsedString)
-  findTagGroups(hedTagList, parsedString, issues)
+  findTagGroups(hedTagList, hedString, parsedString, issues)
   parsedString.tags = formatHedTagsInList(parsedString.tags, true)
   parsedString.tagGroups = formatHedTagsInList(parsedString.tagGroups, true)
   parsedString.topLevelTags = formatHedTagsInList(
