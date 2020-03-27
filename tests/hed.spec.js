@@ -801,4 +801,48 @@ describe('HED strings', function() {
       assert.deepStrictEqual(issues, [])
     })
   })
+
+  describe('HED Attribute Groups', function() {
+    const validator = function(testStrings, expectedResults, expectedIssues) {
+      return hedSchemaPromise.then(schema => {
+        for (const testStringKey in testStrings) {
+          const [testResult, testIssues] = validate.HED.validateHedString(
+            testStrings[testStringKey],
+            schema,
+            false,
+          )
+          assert.sameDeepMembers(
+            testIssues,
+            expectedIssues[testStringKey],
+            testStrings[testStringKey],
+          )
+          assert.strictEqual(
+            testResult,
+            expectedResults[testStringKey],
+            testStrings[testStringKey],
+          )
+        }
+      })
+    }
+
+    it('should allow bracket-delimited attribute groups', function() {
+      const testStrings = {
+        valid: 'Item/Object/Person {Color/Red}',
+        invalid: 'Item/Object/Person {Color/Red, Color/Red}',
+      }
+      const expectedResults = {
+        valid: true,
+        invalid: false,
+      }
+      const expectedIssues = {
+        valid: [],
+        invalid: [
+          generateIssue('duplicateTag', {
+            tag: 'Attribute/Color/Red',
+          }),
+        ],
+      }
+      return validator(testStrings, expectedResults, expectedIssues)
+    })
+  })
 })
