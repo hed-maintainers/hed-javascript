@@ -15,30 +15,14 @@ describe('HED strings', function() {
     const issues2 = []
     const issues3 = []
     const issues4 = []
-    const result1 = validate.stringParser.splitHedString(
-      invalidString1,
-      issues1,
-    )
-    const result2 = validate.stringParser.splitHedString(
-      invalidString2,
-      issues2,
-    )
-    const result3 = validate.stringParser.splitHedString(
-      invalidString3,
-      issues3,
-    )
-    const result4 = validate.stringParser.splitHedString(
-      invalidString4,
-      issues4,
-    )
+    validate.stringParser.parseHedString(invalidString1, issues1)
+    validate.stringParser.parseHedString(invalidString2, issues2)
+    validate.stringParser.parseHedString(invalidString3, issues3)
+    validate.stringParser.parseHedString(invalidString4, issues4)
     assert.strictEqual(issues1.length, 1)
     assert.strictEqual(issues2.length, 1)
     assert.strictEqual(issues3.length, 1)
     assert.strictEqual(issues4.length, 1)
-    assert.strictEqual(result1.length, 3)
-    assert.strictEqual(result2.length, 3)
-    assert.strictEqual(result3.length, 3)
-    assert.strictEqual(result4.length, 3)
   })
 })
 
