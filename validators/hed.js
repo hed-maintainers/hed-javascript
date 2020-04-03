@@ -4,6 +4,8 @@ const Schema = require('./schema').Schema
 
 const openingGroupCharacter = '('
 const closingGroupCharacter = ')'
+const openingAttributeGroupCharacter = '{'
+const closingAttributeGroupCharacter = '}'
 const comma = ','
 const tilde = '~'
 const delimiters = [comma, tilde]
@@ -34,6 +36,28 @@ const countTagGroupParentheses = function(hedString, issues) {
       utils.generateIssue('parentheses', {
         opening: numberOfOpeningParentheses,
         closing: numberOfClosingParentheses,
+      }),
+    )
+  }
+}
+
+/**
+ * Check if attribute group braces match. Pushes an issue if they don't match.
+ */
+const countTagAttributeGroupBraces = function(hedString, issues) {
+  const numberOfOpeningBraces = utils.string.getCharacterCount(
+    hedString,
+    openingAttributeGroupCharacter,
+  )
+  const numberOfClosingBraces = utils.string.getCharacterCount(
+    hedString,
+    closingAttributeGroupCharacter,
+  )
+  if (numberOfOpeningBraces !== numberOfClosingBraces) {
+    issues.push(
+      utils.generateIssue('attributeGroupBraces', {
+        opening: numberOfOpeningBraces,
+        closing: numberOfClosingBraces,
       }),
     )
   }
@@ -390,9 +414,16 @@ const checkIfTagIsValid = function(
 /**
  * Validate the full HED string.
  */
-const validateFullHedString = function(hedString, issues) {
+const validateFullHedString = function(
+  hedString,
+  issues,
+  allowAttributeGroups,
+) {
   countTagGroupParentheses(hedString, issues)
   findDelimiterIssuesInHedString(hedString, issues)
+  if (allowAttributeGroups) {
+    countTagAttributeGroupBraces(hedString, issues)
+  }
   return issues.length === 0
 }
 
@@ -578,24 +609,34 @@ const validateTopLevelTags = function(parsedString, hedSchema, issues) {
 /**
  * Validate a HED string.
  *
- * @param hedString The HED string to validate.
- * @param hedSchema The HED schema to validate against.
- * @param checkForWarnings Whether to check for warnings or only errors.
+ * @param {String} hedString The HED string to validate.
+ * @param {Schema} hedSchema The HED schema to validate against.
+ * @param {boolean} checkForWarnings Whether to check for warnings or only errors.
+ * @param {boolean} allowAttributeGroups Whether to allow curly-bracketed attribute groups.
  * @returns {Array} Whether the HED string is valid and any issues found.
  */
 const validateHedString = function(
   hedString,
-  hedSchema = {},
+  hedSchema = null,
   checkForWarnings = false,
+  allowAttributeGroups = false,
 ) {
   const issues = []
-  const doSemanticValidation = hedSchema instanceof Schema
-  const isFullHedStringValid = validateFullHedString(hedString, issues)
+  const doSemanticValidation = hedSchema !== null && hedSchema instanceof Schema
+  const isFullHedStringValid = validateFullHedString(
+    hedString,
+    issues,
+    allowAttributeGroups,
+  )
   if (!isFullHedStringValid) {
     return [false, issues]
   }
 
-  const parsedString = stringParser.parseHedString(hedString, issues)
+  const parsedString = stringParser.parseHedString(
+    hedString,
+    issues,
+    allowAttributeGroups,
+  )
   if (issues.length !== 0) {
     return [false, issues]
   }
