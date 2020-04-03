@@ -82,7 +82,7 @@ describe('Lists of HED Tags', function() {
     const result = validate.stringParser.splitHedString(hedStr, issues)
     assert.strictEqual(issues.length, 0)
     assert.strictEqual(result.length, 3)
-    assert.strictEqual(result[1], '~')
+    assert.strictEqual(result[1][1], '~')
   })
 
   it('should not include double quotes', function() {
@@ -130,22 +130,29 @@ describe('Lists of HED Tags', function() {
     ]
     const correctDoubleInvalidCharacterList = correctDoubleCommaList
     const correctTrailingCharacterList = correctDoubleCommaList
-    const doubleTildeResult = validate.stringParser.splitHedString(
-      doubleTildeString,
-      doubleTildeIssues,
-    )
-    const doubleCommaResult = validate.stringParser.splitHedString(
-      doubleCommaString,
-      doubleCommaIssues,
-    )
-    const doubleInvalidCharacterResult = validate.stringParser.splitHedString(
-      doubleInvalidCharacterString,
-      doubleInvalidCharacterIssues,
-    )
-    const trailingBlankResult = validate.stringParser.splitHedString(
-      trailingBlankString,
-      trailingBlankIssues,
-    )
+    const doubleTildeResult = validate.stringParser
+      .splitHedString(doubleTildeString, doubleTildeIssues)
+      .map(([, tag]) => {
+        return tag
+      })
+    const doubleCommaResult = validate.stringParser
+      .splitHedString(doubleCommaString, doubleCommaIssues)
+      .map(([, tag]) => {
+        return tag
+      })
+    const doubleInvalidCharacterResult = validate.stringParser
+      .splitHedString(
+        doubleInvalidCharacterString,
+        doubleInvalidCharacterIssues,
+      )
+      .map(([, tag]) => {
+        return tag
+      })
+    const trailingBlankResult = validate.stringParser
+      .splitHedString(trailingBlankString, trailingBlankIssues)
+      .map(([, tag]) => {
+        return tag
+      })
     assert.deepStrictEqual(doubleTildeResult, correctDoubleTildeList)
     assert.deepStrictEqual(doubleCommaResult, correctDoubleCommaList)
     assert.deepStrictEqual(

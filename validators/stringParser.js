@@ -19,31 +19,47 @@ const hedStringIsAGroup = function(hedString) {
 /**
  * Determine whether a HED string contains an attribute group (with curly brackets).
  */
-const hedStringIsAnAttributeGroup = function(hedString, fullHedString, issues) {
+const hedStringIsAnAllowedAttributeGroup = function(
+  hedString,
+  startingIndex,
+  fullHedString,
+  issues,
+  allowAttributeGroups,
+) {
   const trimmedHedString = hedString.trim()
   if (trimmedHedString.includes(openingAttributeGroupCharacter)) {
     if (!trimmedHedString.includes(closingAttributeGroupCharacter)) {
       issues.push(
         utils.generateIssue('invalidCharacter', {
           character: openingAttributeGroupCharacter,
-          index: fullHedString.indexOf(openingAttributeGroupCharacter),
+          index: fullHedString.indexOf(
+            openingAttributeGroupCharacter,
+            startingIndex,
+          ),
           string: fullHedString,
         }),
       )
       return false
     } else if (
       trimmedHedString.indexOf(openingAttributeGroupCharacter) >
-      trimmedHedString.indexOf(closingAttributeGroupCharacter)
+        trimmedHedString.indexOf(closingAttributeGroupCharacter) ||
+      !allowAttributeGroups
     ) {
       issues.push(
         utils.generateIssue('invalidCharacter', {
           character: openingAttributeGroupCharacter,
-          index: fullHedString.indexOf(openingAttributeGroupCharacter),
+          index: fullHedString.indexOf(
+            openingAttributeGroupCharacter,
+            startingIndex,
+          ),
           string: fullHedString,
         }),
         utils.generateIssue('invalidCharacter', {
           character: closingAttributeGroupCharacter,
-          index: fullHedString.indexOf(closingAttributeGroupCharacter),
+          index: fullHedString.indexOf(
+            closingAttributeGroupCharacter,
+            startingIndex,
+          ),
           string: fullHedString,
         }),
       )
@@ -54,7 +70,10 @@ const hedStringIsAnAttributeGroup = function(hedString, fullHedString, issues) {
     issues.push(
       utils.generateIssue('invalidCharacter', {
         character: closingAttributeGroupCharacter,
-        index: fullHedString.indexOf(closingAttributeGroupCharacter),
+        index: fullHedString.indexOf(
+          closingAttributeGroupCharacter,
+          startingIndex,
+        ),
         string: fullHedString,
       }),
     )
@@ -86,6 +105,7 @@ const splitHedString = function(hedString, issues) {
   let numberOfOpenedGroups = 0
   let numberOfClosedGroups = 0
   let currentTag = ''
+  let startingIndex = 0
   // Loop a character at a time.
   for (let i = 0; i < hedString.length; i++) {
     let character = hedString.charAt(i)
@@ -107,9 +127,10 @@ const splitHedString = function(hedString, issues) {
     if (numberOfOpenedGroups === numberOfClosedGroups && character === tilde) {
       // Found a tilde, so push the current tag and a tilde.
       if (!utils.string.stringIsEmpty(currentTag)) {
-        hedTags.push(currentTag.trim())
+        hedTags.push([startingIndex, currentTag.trim()])
       }
-      hedTags.push(tilde)
+      hedTags.push([i, tilde])
+      startingIndex = i
       currentTag = ''
     } else if (
       numberOfOpenedGroups === numberOfClosedGroups &&
@@ -117,8 +138,9 @@ const splitHedString = function(hedString, issues) {
     ) {
       // Found the end of a tag, so push the current tag.
       if (!utils.string.stringIsEmpty(currentTag)) {
-        hedTags.push(currentTag.trim())
+        hedTags.push([startingIndex, currentTag.trim()])
       }
+      startingIndex = i
       currentTag = ''
     } else if (invalidCharacters.includes(character)) {
       // Found an invalid character, so push an issue.
@@ -130,8 +152,9 @@ const splitHedString = function(hedString, issues) {
         }),
       )
       if (!utils.string.stringIsEmpty(currentTag)) {
-        hedTags.push(currentTag.trim())
+        hedTags.push([startingIndex, currentTag.trim()])
       }
+      startingIndex = i
       currentTag = ''
     } else {
       currentTag += character
@@ -139,7 +162,7 @@ const splitHedString = function(hedString, issues) {
   }
   if (!utils.string.stringIsEmpty(currentTag)) {
     // Push last HED tag.
-    hedTags.push(currentTag.trim())
+    hedTags.push([startingIndex, currentTag.trim()])
   }
   return hedTags
 }
@@ -151,24 +174,49 @@ const splitHedString = function(hedString, issues) {
  * @param hedString The full HED string.
  * @param parsedString The object to store parsed output in.
  * @param issues The array of issues.
+ * @param allowAttributeGroups Whether to allow curly-bracketed attribute groups.
  */
-const findTagGroups = function(groupTagsList, hedString, parsedString, issues) {
-  for (const tagOrGroup of groupTagsList) {
+const findTagGroups = function(
+  groupTagsList,
+  hedString,
+  parsedString,
+  issues,
+  allowAttributeGroups,
+) {
+  for (const [startingIndex, tagOrGroup] of groupTagsList) {
     if (hedStringIsAGroup(tagOrGroup)) {
       const tagGroupString = removeGroupParentheses(tagOrGroup)
       // Split the group tag and recurse.
       const nestedGroupTagList = splitHedString(tagGroupString, issues)
-      findTagGroups(nestedGroupTagList, hedString, parsedString, issues)
+      findTagGroups(
+        nestedGroupTagList,
+        hedString,
+        parsedString,
+        issues,
+        allowAttributeGroups,
+      )
       parsedString.tagGroupStrings.push(tagOrGroup)
-      parsedString.tagGroups.push(nestedGroupTagList)
-    } else if (hedStringIsAnAttributeGroup(tagOrGroup, hedString, issues)) {
+      parsedString.tagGroups.push(
+        nestedGroupTagList.map(([, nestedTag]) => {
+          return nestedTag
+        }),
+      )
+    } else if (
+      hedStringIsAnAllowedAttributeGroup(
+        tagOrGroup,
+        startingIndex,
+        hedString,
+        issues,
+        allowAttributeGroups,
+      )
+    ) {
       let [primaryTag, attributeTagString] = tagOrGroup.split(
         openingAttributeGroupCharacter,
       )
       primaryTag = primaryTag.trim()
       attributeTagString = attributeTagString.slice(0, -1).trim()
       const attributeTagList = splitHedString(attributeTagString, issues)
-      const tagGroupList = attributeTagList.map(tag => {
+      const tagGroupList = attributeTagList.map(([, tag]) => {
         if (tag.startsWith('/')) {
           return 'Attribute' + tag
         } else {
@@ -193,7 +241,7 @@ const findTagGroups = function(groupTagsList, hedString, parsedString, issues) {
  */
 const findTopLevelTags = function(hedTags, parsedString) {
   const topLevelTags = []
-  for (const tagOrGroup of hedTags) {
+  for (const [, tagOrGroup] of hedTags) {
     if (!hedStringIsAGroup(tagOrGroup)) {
       topLevelTags.push(tagOrGroup)
       if (!parsedString.tags.includes(tagOrGroup)) {
@@ -262,9 +310,14 @@ const formatHedTag = function(hedTag, onlyRemoveNewLine = false) {
  *
  * @param hedString The full HED string to parse.
  * @param issues The array of issues.
+ * @param allowAttributeGroups Whether to allow curly-bracketed attribute groups.
  * @returns {{tagGroups: Array, tagGroupStrings: Array, topLevelTags: Array, tags: Array, formattedTagGroups: Array, formattedTopLevelTags: Array, formattedTags: Array}} The parsed HED tag data.
  */
-const parseHedString = function(hedString, issues) {
+const parseHedString = function(
+  hedString,
+  issues,
+  allowAttributeGroups = false,
+) {
   const parsedString = {
     tags: [],
     tagGroups: [],
@@ -273,7 +326,13 @@ const parseHedString = function(hedString, issues) {
   }
   const hedTagList = splitHedString(hedString, issues)
   parsedString.topLevelTags = findTopLevelTags(hedTagList, parsedString)
-  findTagGroups(hedTagList, hedString, parsedString, issues)
+  findTagGroups(
+    hedTagList,
+    hedString,
+    parsedString,
+    issues,
+    allowAttributeGroups,
+  )
   parsedString.tags = formatHedTagsInList(parsedString.tags, true)
   parsedString.tagGroups = formatHedTagsInList(parsedString.tagGroups, true)
   parsedString.topLevelTags = formatHedTagsInList(
