@@ -300,6 +300,33 @@ describe('HED strings', function() {
       }
       validator(testStrings, expectedResults, expectedIssues)
     })
+
+    it('should not allow bracket-delimited attribute groups when not explicitly enabled', function() {
+      const testStrings = {
+        valid: 'Item/Object/Person',
+        invalid: 'Item/Object/Person {Color/Red}',
+      }
+      const expectedResults = {
+        valid: true,
+        invalid: false,
+      }
+      const expectedIssues = {
+        valid: [],
+        invalid: [
+          generateIssue('invalidCharacter', {
+            character: '{',
+            index: 19,
+            string: testStrings.invalid,
+          }),
+          generateIssue('invalidCharacter', {
+            character: '}',
+            index: 29,
+            string: testStrings.invalid,
+          }),
+        ],
+      }
+      return validator(testStrings, expectedResults, expectedIssues)
+    })
   })
 
   describe('Individual HED Tags', function() {
@@ -316,7 +343,7 @@ describe('HED strings', function() {
         function(parsedTestString, testIssues) {
           return validate.HED.validateIndividualHedTags(
             parsedTestString,
-            {},
+            null,
             testIssues,
             false,
             checkForWarnings,
@@ -591,7 +618,7 @@ describe('HED strings', function() {
         function(parsedTestString, testIssues) {
           return validate.HED.validateHedTagLevels(
             parsedTestString,
-            {},
+            null,
             testIssues,
             false,
           )
@@ -803,13 +830,45 @@ describe('HED strings', function() {
   })
 
   describe('HED Attribute Groups', function() {
-    const validator = function(testStrings, expectedResults, expectedIssues) {
+    const validatorSyntactic = function(
+      testStrings,
+      expectedResults,
+      expectedIssues,
+      checkForWarnings = false,
+    ) {
+      for (const testStringKey in testStrings) {
+        const [testResult, testIssues] = validate.HED.validateHedString(
+          testStrings[testStringKey],
+          null,
+          checkForWarnings,
+          true,
+        )
+        assert.sameDeepMembers(
+          testIssues,
+          expectedIssues[testStringKey],
+          testStrings[testStringKey],
+        )
+        assert.strictEqual(
+          testResult,
+          expectedResults[testStringKey],
+          testStrings[testStringKey],
+        )
+      }
+    }
+
+    const validatorSemantic = function(
+      testStrings,
+      expectedResults,
+      expectedIssues,
+      checkForWarnings = false,
+    ) {
       return hedSchemaPromise.then(schema => {
         for (const testStringKey in testStrings) {
           const [testResult, testIssues] = validate.HED.validateHedString(
             testStrings[testStringKey],
             schema,
-            false,
+            checkForWarnings,
+            true,
           )
           assert.sameDeepMembers(
             testIssues,
@@ -825,24 +884,58 @@ describe('HED strings', function() {
       })
     }
 
-    it('should allow bracket-delimited attribute groups', function() {
+    it('should allow bracket-delimited attribute groups when explicitly enabled', function() {
       const testStrings = {
         valid: 'Item/Object/Person {Color/Red}',
-        invalid: 'Item/Object/Person {Color/Red, Color/Red}',
+        slashValid: 'Item/Object/Person {/Color/Red}',
+        duplicateAttribute: 'Item/Object/Person {Color/Red, Color/Red}',
+        duplicateSlashAttribute: 'Item/Object/Person {Color/Red, /Color/Red}',
       }
       const expectedResults = {
         valid: true,
-        invalid: false,
+        slashValid: true,
+        duplicateAttribute: false,
+        duplicateSlashAttribute: false,
       }
       const expectedIssues = {
         valid: [],
-        invalid: [
+        slashValid: [],
+        duplicateAttribute: [
+          generateIssue('duplicateTag', {
+            tag: 'Attribute/Color/Red',
+          }),
+        ],
+        duplicateSlashAttribute: [
           generateIssue('duplicateTag', {
             tag: 'Attribute/Color/Red',
           }),
         ],
       }
-      return validator(testStrings, expectedResults, expectedIssues)
+      return validatorSemantic(testStrings, expectedResults, expectedIssues)
+    })
+
+    it('should not have mismatched curly braces', function() {
+      const testStrings = {
+        extraOpening: 'Item/Object/Person {Color/Red},{/Action/Reach/To touch',
+        // The extra comma is needed to avoid a comma error.
+        extraClosing: 'Item/Object/Person {Color/Red},}/Action/Reach/To touch',
+        valid: 'Item/Object/Person {Color/Red},/Action/Reach/To touch',
+      }
+      const expectedResults = {
+        extraOpening: false,
+        extraClosing: false,
+        valid: true,
+      }
+      const expectedIssues = {
+        extraOpening: [
+          generateIssue('attributeGroupBraces', { opening: 2, closing: 1 }),
+        ],
+        extraClosing: [
+          generateIssue('attributeGroupBraces', { opening: 1, closing: 2 }),
+        ],
+        valid: [],
+      }
+      validatorSyntactic(testStrings, expectedResults, expectedIssues)
     })
   })
 })
